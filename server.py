@@ -6,7 +6,11 @@ from bson.json_util import dumps
 from datetime import datetime 
 from flask_bcrypt import Bcrypt 
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, verify_jwt_in_request, get_jwt_claims
+from flask_jwt_extended import (
+    JWTManager, create_access_token, verify_jwt_in_request, 
+    get_jwt_claims, jwt_refresh_token_required, create_refresh_token,
+    get_jwt_identity
+)
 import getpass, sys, json
 
 app = Flask(__name__)
@@ -67,12 +71,15 @@ def create_user():
         'role': role,
         'created': created,
         'updated_at': updated_at
-    })
+    }).inserted_id
 
-    return jsonify({'msg': 'User successfully registered'})
+    print(new_id)
+    resp = {'msg': 'User successfully registered', 'new_id': new_id}
+
+    return json.dumps(resp, default=str)
 
 
-@app.route('/users/login', methods=["POST"])
+@app.route('/login', methods=["POST"])
 def login():
     users = db.users
 
@@ -87,14 +94,26 @@ def login():
                 'id': str(this_user["_id"]),
                 'role': str(this_user["role"])
             })
-            return jsonify({'msg': 'Success', 'token': token})
+            refresh_token = create_refresh_token(identity= {
+                'id': str(this_user["_id"]),
+                'role': str(this_user["role"])
+            })
+            return jsonify({'msg': 'Success', 'access_token': token, 'refresh_token': refresh_token})
         else:
             return jsonify({'msg': 'Wrong password'})
     else:
         return jsonify({'msg': 'A user with that email was not found'})
 
+@app.route('/refresh', methods=['POST'])
+@jwt_refresh_token_required
+def refresh():
+    current_user = get_jwt_identity()
+    ret = {
+        'access_token': create_access_token(identity=current_user)
+    }
+    return jsonify(ret), 200
+
 @app.route('/users/get_users', methods=["GET"])
-@admin_required
 def get_users():
     users = db.users
     resp = list(users.find())
@@ -104,12 +123,31 @@ def get_users():
 @app.route('/users/update_user', methods=["POST"])
 @admin_required
 def update_user():
-    pass
+    users = db.users
+
+    idToUpdate = request.get_json()['id']
+    update = request.get_json()['update']
+    try:
+        response = users.update_one({'_id': ObjectId(oid=idToUpdate)}, {'$set': update})
+        count = response.modified_count
+        if count == 0:
+            return jsonify({'msg': 'no updates made'})
+        elif count == 1:
+            return jsonify({'msg': 'success'})
+    except:
+        return jsonify({'msg': 'Something is wrong with your request'}), 400
+
 
 @app.route('/users/delete_user', methods=["POST"])
 @admin_required
 def delete_user():
-    pass
+    users = db.users
+    
+    idToDelete = request.get_json()['id']
+    if users.delete_one({'_id': ObjectId(oid=idToDelete)}).deleted_count == 1:
+        return jsonify({'msg': 'success'})
+    else:
+        return jsonify({'msg': 'No user with that id found'})
 
 
 
