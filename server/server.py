@@ -9,18 +9,27 @@ from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token, verify_jwt_in_request, 
     get_jwt_claims, jwt_refresh_token_required, create_refresh_token,
-    get_jwt_identity
+    get_jwt_identity, get_raw_jwt, jwt_required
 )
 import getpass, sys, json
 
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = 'my_precious'
+app.config['JWT_BLACKLIST_ENABLED'] = True
+app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
+
+blacklist = set()
 
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 
 CORS(app)
 
+
+
+'''
+    Create Database from MongoDB Atlas
+'''
 try:
     user_password = open("./credentials.txt", "r").read()
 except FileNotFoundError:
@@ -29,9 +38,13 @@ except FileNotFoundError:
 client = MongoClient("mongodb+srv://dev_user:" + user_password + "@simple-login-5a4hv.gcp.mongodb.net/test?retryWrites=true&w=majority")
 db = client.get_database("simpleloginreg")
 
-# A custom decorator that verifies the JWT is present in
-# the request, as well as insuring that this user has a role of
-# `admin` in the access token
+
+
+
+'''
+    Authentication functions
+'''
+
 def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -46,6 +59,66 @@ def admin_required(fn):
 @jwt.user_claims_loader
 def add_claims_to_access_token(identity):
     return {'role': identity['role']}
+
+@jwt.token_in_blacklist_loader
+def check_if_token_in_blacklist(decrypted_token):
+    jti = decrypted_token["jti"]
+    return jti in blacklist
+
+@app.route('/refresh', methods=['POST'])
+@jwt_refresh_token_required
+def refresh():
+    current_user = get_jwt_identity()
+    ret = {
+        'access_token': create_access_token(identity=current_user)
+    }
+    return jsonify(ret), 200
+
+@app.route('/login', methods=["POST"])
+def login():
+    users = db.users
+
+    email = request.get_json()["email"]
+    password = request.get_json()["password"]
+
+    this_user = users.find_one({'email': email})
+
+    if this_user:
+        if bcrypt.check_password_hash(this_user["password"], password):
+            token = create_access_token(identity = {
+                'id': str(this_user["_id"]),
+                'role': str(this_user["role"])
+            })
+            refresh_token = create_refresh_token(identity= {
+                'id': str(this_user["_id"]),
+                'role': str(this_user["role"])
+            })
+            return jsonify({'msg': 'Success', 'access_token': token, 'refresh_token': refresh_token})
+        else:
+            return jsonify({'msg': 'Wrong password'})
+    else:
+        return jsonify({'msg': 'A user with that email was not found'})
+
+@app.route('/logoutAccess', methods=['DELETE'])
+@jwt_required
+def logoutAccess():
+    jti = get_raw_jwt()['jti']
+    blacklist.add(jti)
+    return jsonify({"msg": "Successfully logged out"})
+
+@app.route('/logoutRefresh', methods=['DELETE'])
+@jwt_refresh_token_required
+def logoutRefresh():
+    jti = get_raw_jwt()['jti']
+    blacklist.add(jti)
+    return jsonify({"msg": "Successfully logged out"}), 200
+
+
+
+
+''' 
+    CRUD actions
+'''
 
 @app.route('/users/create_user', methods=["POST"])
 @admin_required
@@ -73,47 +146,12 @@ def create_user():
         'updated_at': updated_at
     }).inserted_id
 
-    print(new_id)
     resp = {'msg': 'User successfully registered', 'new_id': new_id}
 
     return json.dumps(resp, default=str)
 
-
-@app.route('/login', methods=["POST"])
-def login():
-    users = db.users
-
-    email = request.get_json()["email"]
-    password = request.get_json()["password"]
-
-    this_user = users.find_one({'email': email})
-
-    if this_user:
-        if bcrypt.check_password_hash(this_user["password"], password):
-            token = create_access_token(identity = {
-                'id': str(this_user["_id"]),
-                'role': str(this_user["role"])
-            })
-            refresh_token = create_refresh_token(identity= {
-                'id': str(this_user["_id"]),
-                'role': str(this_user["role"])
-            })
-            return jsonify({'msg': 'Success', 'access_token': token, 'refresh_token': refresh_token})
-        else:
-            return jsonify({'msg': 'Wrong password'})
-    else:
-        return jsonify({'msg': 'A user with that email was not found'})
-
-@app.route('/refresh', methods=['POST'])
-@jwt_refresh_token_required
-def refresh():
-    current_user = get_jwt_identity()
-    ret = {
-        'access_token': create_access_token(identity=current_user)
-    }
-    return jsonify(ret), 200
-
 @app.route('/users/get_users', methods=["GET"])
+@admin_required
 def get_users():
     users = db.users
     resp = list(users.find())
@@ -138,7 +176,7 @@ def update_user():
         return jsonify({'msg': 'Something is wrong with your request'}), 400
 
 
-@app.route('/users/delete_user', methods=["POST"])
+@app.route('/users/delete_user', methods=["DELETE"])
 @admin_required
 def delete_user():
     users = db.users
