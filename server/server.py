@@ -65,7 +65,7 @@ def check_if_token_in_blacklist(decrypted_token):
     jti = decrypted_token["jti"]
     return jti in blacklist
 
-@app.route('/refresh', methods=['POST'])
+@app.route('/auth/refresh', methods=['POST'])
 @jwt_refresh_token_required
 def refresh():
     current_user = get_jwt_identity()
@@ -74,7 +74,7 @@ def refresh():
     }
     return jsonify(ret), 200
 
-@app.route('/login', methods=["POST"])
+@app.route('/auth/login', methods=["POST"])
 def login():
     users = db.users
 
@@ -99,14 +99,14 @@ def login():
     else:
         return jsonify({'msg': 'A user with that email was not found'})
 
-@app.route('/logoutAccess', methods=['DELETE'])
+@app.route('/auth/logoutAccess', methods=['DELETE'])
 @jwt_required
 def logoutAccess():
     jti = get_raw_jwt()['jti']
     blacklist.add(jti)
     return jsonify({"msg": "Successfully logged out"})
 
-@app.route('/logoutRefresh', methods=['DELETE'])
+@app.route('/auth/logoutRefresh', methods=['DELETE'])
 @jwt_refresh_token_required
 def logoutRefresh():
     jti = get_raw_jwt()['jti']
