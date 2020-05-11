@@ -46,10 +46,18 @@ export default class App extends Component {
           this.setState({data: resp.data["data"]});
         })
         .catch(error => {
-          refreshAccess().then(resp => {
-            return this.setData();
-          });
+          if (error.response.data.msg.includes("expir")) {
+            refreshAccess().then(resp => {
+              return this.setData();
+            });
+          } else if (error.response.data.msg === "Admins only!") {
+              this.setState({data: []});
+          } else {
+            console.log(error)
+          }
         });
+    } else {
+      this.setState({data: ""})
     }
 
   }

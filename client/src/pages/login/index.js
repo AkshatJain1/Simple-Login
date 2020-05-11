@@ -30,6 +30,8 @@ export default class Login extends Component {
                 if ("access_token" in resp) {
                     localStorage.setItem("access_token", resp["access_token"]);
                     localStorage.setItem("refresh_token", resp["refresh_token"]);
+                    localStorage.setItem("user", JSON.stringify(resp["user"]));
+
                     this.props.reloadHandler();
                 } else {
                     this.setState({wrongLogin: true, logging: false});
@@ -88,6 +90,7 @@ export default class Login extends Component {
                                                 className="form-control"
                                                 name="password"
                                                 placeholder="Enter Password"
+                                                autoComplete="on"
                                                 value={this.state.password}
                                                 onChange={this.onChange} />
                                         </div>

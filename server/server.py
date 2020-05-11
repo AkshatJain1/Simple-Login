@@ -93,7 +93,8 @@ def login():
                 'id': str(this_user["_id"]),
                 'role': str(this_user["role"])
             })
-            return jsonify({'msg': 'Success', 'access_token': token, 'refresh_token': refresh_token})
+            resp = {'msg': 'Success', 'access_token': token, 'refresh_token': refresh_token, 'user': this_user}
+            return json.dumps(resp, default=str)
         else:
             return jsonify({'msg': 'Wrong password'})
     else:
@@ -165,6 +166,7 @@ def update_user():
 
     idToUpdate = request.get_json()['id']
     update = request.get_json()['update']
+    update["updated_at"] = datetime.utcnow()
     try:
         response = users.update_one({'_id': ObjectId(oid=idToUpdate)}, {'$set': update})
         count = response.modified_count
@@ -181,7 +183,7 @@ def update_user():
 def delete_user():
     users = db.users
     
-    idToDelete = request.get_json()['id']
+    idToDelete = request.args['id']
     if users.delete_one({'_id': ObjectId(oid=idToDelete)}).deleted_count == 1:
         return jsonify({'msg': 'success'})
     else:
